@@ -37,7 +37,7 @@
 | 方式 | 说明 |
 |---|---|
 | ✅ **GitHub Releases** | [CathayPDG v0.1.5](https://github.com/zzhjim02/CathayPDG/releases/tag/v0.1.5)（Assets 里直接下 exe） |
-| 📥 百度网盘（密码 2026） | <待填：百度网盘分享链接> |
+| 📥 百度网盘（密码 2026） | https://pan.baidu.com/s/1s59XzQ7UjXnD246YDX0ckQ?pwd=2026 |
 
 包内包含：**主程序 exe** + `程序组件\`（Pdg2Pic 引擎、密码本、便携运行库、源码）。换电脑整个文件夹拷过去即可。
 
