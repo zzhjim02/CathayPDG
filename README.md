@@ -12,25 +12,25 @@
 
 ## 🔗 Cathay 人文社科工具链
 
+> 🧭 主线一句话：**CathayIndex 建本地库 → CathayFinder 查书 → CathayPDG 把查到的书（读秀/超星 PDG）转成 PDF → CathayOCR 识别 → CathayShelf 著录归架 → CathayReader 双栏校勘。**
+
 | 步骤 | 工具 | 功能 | 状态 |
 |:---:|---|---|---|
-| **⓪** | **CathayPDG（你在这里）** | 读秀/超星 **PDG 批量转 PDF**：解压、解密、PDG→PDF、横竖排分柜 | v0.1.5 |
-| ① | [CathayIndex](https://github.com/zzhjim02/CathayIndex) | 把本地文件夹建成可检索的「本地文件库」 | v1.0.0 |
-| ② | [CathayFinder](https://github.com/zzhjim02/CathayFinder) | 综合性图书检索引擎：11 个渠道精准查书（找 SSID / 找路径） | v1.0.0 |
-| ③ | [CathayOCR](https://github.com/zzhjim02/CathayOCR) | 扫描件 OCR，产出可搜索文字层 PDF | v1.2.4 |
-| ④ | [CathayShelf](https://github.com/zzhjim02/CathayShelf) | 图书著录自动化整理（一 PDF 一夹、命名规范化） | v0.4.5 |
-| ⑤ | [CathayReader](https://github.com/zzhjim02/CathayReader) | 双栏校勘阅读器 | v1.0.0 |
-
-> 🧭 主线一句话：**CathayPDG 先把读秀/超星的 PDG 包变成 PDF → 再交给后面几步检索、识别、著录、校勘。**
+| ① | [CathayIndex](https://github.com/zzhjim02/CathayIndex) | v1.0.0 | 把本地文件夹建成可检索的「本地文件库」 |
+| ② | [CathayFinder](https://github.com/zzhjim02/CathayFinder) | v1.0.0 | 综合性图书检索引擎：11 个渠道精准查书（找 SSID / 找路径） |
+| ③ | **CathayPDG（你在这里）** | v0.1.5 | 读秀/超星 **PDG 批量转 PDF**：解压解密、横竖排分柜（把查到的书变成 PDF） |
+| ④ | [CathayOCR](https://github.com/zzhjim02/CathayOCR) | v1.2.4 | 扫描件 OCR，产出可搜索文字层 PDF |
+| ⑤ | [CathayShelf](https://github.com/zzhjim02/CathayShelf) | v0.4.5 | 图书著录自动化整理（一 PDF 一夹、命名规范化） |
+| ⑥ | [CathayReader](https://github.com/zzhjim02/CathayReader) | v1.0.0 | 双栏校勘阅读器 |
 
 **备用软件（四个，按需取用）**
 
 | 工具 | 什么时候用 |
 |---|---|
-| [CathayRepair](https://github.com/zzhjim02/CathayRepair) | ③ OCR 前：PDF 目录结构坏了先修一下 |
-| [CathayRestore](https://github.com/zzhjim02/CathayRestore) | ③ 之后：把 OCR 的 TXT 写回成竖排可搜索文字层 |
-| [CathayExtract](https://github.com/zzhjim02/CathayExtract) | ③ 的替代入口：已经是有字层的双层 PDF，直接抽 TXT |
-| [CathaySimplify](https://github.com/zzhjim02/CathaySimplify) | 繁简转换 / 编码规范化（功能已并入 ④ CathayShelf） |
+| [CathayRepair](https://github.com/zzhjim02/CathayRepair) | ④ OCR 前：PDF 目录结构坏了先修一下 |
+| [CathayRestore](https://github.com/zzhjim02/CathayRestore) | ④ 之后：把 OCR 的 TXT 写回成竖排可搜索文字层 |
+| [CathayExtract](https://github.com/zzhjim02/CathayExtract) | ④ 的替代入口：已经有字层的双层 PDF，直接抽 TXT |
+| [CathaySimplify](https://github.com/zzhjim02/CathaySimplify) | 繁简转换 / 编码规范化（功能已并入 ⑤ CathayShelf） |
 
 ## 📦 下载
 
