@@ -1,0 +1,6 @@
+# CathayPDG · 超星 PDG 批量转换工具
+pillow>=9.0          # 看图 / 放大 / 合成
+pymupdf>=1.23        # 读写 PDF
+pyzipper>=0.3        # AES 加密 ZIP（读秀加密包）
+pycryptodome>=3.19   # pyzipper 的加密后端
+tkinterdnd2>=0.3     # 可选：拖放
