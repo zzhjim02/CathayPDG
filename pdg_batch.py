@@ -9,7 +9,7 @@ CathayPDG 引擎（第三块）：批量 —— 解压 → 判定 → 自建 / �
   3. 嵌套展开：书目录里只有一层同名子目录 → 自动下钻；
   4. 判定类型：全可自解 → 自建 A4 PDF；含 AAH 等 → 交 pdg_external（Pdg2Pic）；
   5. 输出 <书目录名>.pdf（A4/不强求）到源文件夹，重名自动加序号；已存在同名 PDF 视为已处理（智能跳过，可关）；
-  6. 原始压缩包可移入 输入目录\\_已处理（默认开）；
+  6. 原始压缩包可移入 输入目录\\已处理（默认开）；
   7. 出报告 CSV + Markdown（含失败清单和外挂错误日志摘要）。
 
 自检：py -3 pdg_batch.py --selftest
@@ -47,7 +47,7 @@ import pdg_core as C
 import pdg_external as X
 
 APP_TITLE = 'CathayPDG · 超星 PDG 批量转换工具'
-APP_VERSION = 'v0.1.5'
+APP_VERSION = 'v0.1.6'
 SEVENZ = r'C:\Program Files\7-Zip\7z.exe'
 PDG2PIC = X.DEFAULT_EXE
 PW_FILE = os.path.join(HERE, 'config', 'passwords.txt')
@@ -91,6 +91,214 @@ def passwords(extra=None):
         if p and p not in out:
             out.append(p)
     return out
+
+
+# ---------------------------------------------------------------- 压缩包里的中文名
+# zip 格式只留了一个「UTF-8 标志位」，没有编码字段。中文包基本是 GBK / Big5 裸塞进去的，
+# 没有标志位时 zipfile 一律按 cp437 解 → 一坨制表符。这里按可信度打分，挑最像人话的那个。
+# gb2312 放第一个是有意的：它的字库比 gbk 小得多，一段字节能用 gb2312 严格解通，
+# 基本就能断定它本来就是简体 GBK —— Big5 的字节很难整段落进 gb2312 的区间。
+_ZIP_ENC = ('gb2312', 'gbk', 'big5', 'cp932', 'euc_kr')
+
+# cp437 字节被当成 Unicode 时留下的特征字符：制表符、方块、半块、± · √ ≤ ≥ ÷ ° ² ⁿ 希腊字母…
+_CP437_TELL = (
+    set(range(0x2500, 0x25A0)) | {          # 制表符 + 方块/阴影块
+        0x00B1, 0x00B7, 0x00BD, 0x00BC, 0x00B2, 0x207F, 0x221A, 0x2264,
+        0x2265, 0x00F7, 0x00B0, 0x220E, 0x221E, 0x2229, 0x2261, 0x2320,
+        0x2321, 0x00AA, 0x00BA, 0x00A1, 0x00BF, 0x00AB, 0x00BB, 0x00A2,
+        0x00A3, 0x00A5, 0x20A7, 0x0192,
+    } | set(range(0x0391, 0x03AA)) | set(range(0x03B1, 0x03CA))   # 希腊字母
+)
+
+
+def _fluency(s):
+    """解码结果里有多少比例的汉字是常用字（能编回 GB2312 的算常用）。
+
+    简体名 ≈ 1.0；GBK 区里的冷僻字/用错编码解出来的怪字 ≈ 0.3。
+    """
+    cjk = [c for c in s if 0x4E00 <= ord(c) <= 0x9FFF]
+    if not cjk:
+        return 0.0
+    good = 0
+    for c in cjk:
+        try:
+            c.encode('gb2312')
+            good += 1
+        except UnicodeEncodeError:
+            pass
+    return good / len(cjk)
+
+
+def _score_name(s):
+    """解码结果打分：像正常中文名 → 高分；像 cp437 乱码 → 低分。"""
+    if not s or '\ufffd' in s:
+        return -1000
+    bad = sum(1 for c in s if ord(c) in _CP437_TELL)
+    cjk = sum(1 for c in s if 0x4E00 <= ord(c) <= 0x9FFF)
+    ctrl = sum(1 for c in s if ord(c) < 0x20)
+    return cjk * 3 - bad * 4 - ctrl * 10 + _fluency(s) * 15
+
+
+_ENC_ORDER = None
+
+
+def _enc_order():
+    """按系统区域排简繁体的优先顺序 —— 打分打平时靠它决定谁上。"""
+    global _ENC_ORDER
+    if _ENC_ORDER is not None:
+        return _ENC_ORDER
+    order = _ZIP_ENC
+    try:
+        import ctypes
+        lcid = ctypes.windll.kernel32.GetSystemDefaultLCID() & 0xFFFF
+        if lcid in (0x0404, 0x0C04, 0x1404):          # 台湾 / 香港 / 澳门
+            order = ('big5',) + tuple(e for e in _ZIP_ENC if e != 'big5')
+    except Exception:
+        pass
+    _ENC_ORDER = order
+    return order
+
+
+def _cp936_tweak(s):
+    """Python 的 gbk/gb2312 表把 A1A4 解成 U+30FB（片假名中点），Windows 代码页 936
+    实际显示的是 U+00B7。中文名统一成后者，跟资源管理器/7-Zip 里看到的对得上。"""
+    if '\u30fb' in s and any(0x4E00 <= ord(c) <= 0x9FFF for c in s):
+        return s.replace('\u30fb', '\u00b7')
+    return s
+
+
+def _try_decode(raw, enc):
+    try:
+        return raw.decode(enc)
+    except (UnicodeDecodeError, LookupError):
+        return None
+
+
+def decode_zip_name(raw, flag_bits=0):
+    """把 zip 条目名（bytes）解成人能看的名字。
+
+    顺序：UTF-8 标志位 → 纯 ASCII → 窄字库锁定（gb2312 / big5）→ 严格 UTF-8
+    （不少打包工具不打标志位也用 UTF-8）→ GBK/Big5/日文/韩文打分择优 → cp437 兜底。
+    """
+    if isinstance(raw, str):
+        return _cp936_tweak(raw)
+    out = None
+    if flag_bits & 0x800:                       # 规范里唯一的编码标志位
+        out = _try_decode(raw, 'utf-8')
+    if out is None:
+        out = _try_decode(raw, 'ascii')         # 纯英文别折腾
+    if out is None:
+        # 窄字库（大陆 gb2312 / 港澳台 big5）能严格解通就别再比了：
+        # 一段字节能整段落进这么小的字库，基本就锁定它是哪种编码了。
+        out = _try_decode(raw, _enc_order()[0])
+    if out is None:
+        out = _try_decode(raw, 'utf-8')
+    if out is None:
+        best, best_s = -10 ** 9, None
+        for enc in _enc_order() + ('cp437',):
+            s = _try_decode(raw, enc)
+            if s is None:
+                continue
+            sc = _score_name(s)
+            if sc > best:
+                best, best_s = sc, s
+        out = best_s if (best_s is not None and best > -100) \
+            else raw.decode('utf-8', errors='replace')
+    return _cp936_tweak(out)
+
+
+def _safe_join(dest, name):
+    """拼目标路径，顺手挡掉 ../ 这类目录穿越。"""
+    name = name.replace('\\', '/')
+    parts = [p for p in name.split('/') if p not in ('', '.', '..')]
+    return os.path.join(dest, *parts) if parts else dest
+
+
+def _orig_name(info):
+    """拿条目名的原始字节。
+
+    坑：zipfile 读出时 orig_filename 已经是 str 了 —— 没带 UTF-8 标志位的一律被它
+    按 cp437 解过一轮。所以得先按 cp437 编码回去，才能还原出包里的真实字节。
+    """
+    raw = getattr(info, 'orig_filename', None)
+    if raw is None:
+        raw = info.filename
+    if isinstance(raw, bytes):
+        return raw
+    if info.flag_bits & 0x800:
+        return raw.encode('utf-8', 'surrogateescape')
+    try:
+        return raw.encode('cp437')
+    except UnicodeEncodeError:
+        return raw.encode('utf-8', 'surrogateescape')
+
+
+def _extract_zip_named(z, dest, pwd, log=print):
+    """逐项落盘（不用 extractall），文件名走 decode_zip_name。返回写入文件数。"""
+    n, fixed = 0, 0
+    for info in z.infolist():
+        name = decode_zip_name(_orig_name(info), info.flag_bits)
+        tgt = _safe_join(dest, name)
+        if name.endswith('/') or info.is_dir():
+            os.makedirs(tgt, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(tgt) or dest, exist_ok=True)
+        with z.open(info, pwd=pwd) as src, open(tgt, 'wb') as out:
+            shutil.copyfileobj(src, out, 1024 * 256)
+        n += 1
+        if '\ufffd' in name:
+            fixed += 1
+    if fixed:
+        log('  有 %d 个条目名实在认不出编码，已按容错方式落盘' % fixed)
+    return n
+
+
+def _looks_mojibake(name):
+    """名字里塞了一堆 cp437 特征字符 → 基本可以判定是乱码。"""
+    return sum(1 for c in name if ord(c) in _CP437_TELL) >= 2
+
+
+def _unmojibake(name):
+    """cp437 乱码名还原：先按 cp437 编回字节，再按 GBK/Big5 解。解不出中文就放弃。"""
+    try:
+        raw = name.encode('cp437')
+    except (UnicodeEncodeError, LookupError):
+        return None
+    for enc in _enc_order():
+        try:
+            s = raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        if '\ufffd' in s:
+            continue
+        if any(0x4E00 <= ord(c) <= 0x9FFF for c in s):
+            return _cp936_tweak(s)
+    return None
+
+
+def fix_mojibake_names(root, log=print):
+    """把目录树里的 cp437 乱码名改回中文（兜 7z/rar 输出和历史残留）。返回改动条数。
+
+    只动「确实是乱码且能解出中文」的名字，正常的不会碰。
+    """
+    n = 0
+    try:
+        for dp, dns, fns in os.walk(root, topdown=False):
+            for nm in list(fns) + list(dns):
+                if not _looks_mojibake(nm):
+                    continue
+                fixed = _unmojibake(nm)
+                if not fixed or fixed == nm:
+                    continue
+                try:
+                    os.replace(os.path.join(dp, nm), os.path.join(dp, fixed))
+                    n += 1
+                    log('  名字修复：%s → %s' % (nm, fixed))
+                except OSError as e:
+                    log('  名字修复失败（%s）：%s' % (nm, e))
+    except Exception as e:
+        log('乱码名修复跳过：%s' % e)
+    return n
 
 
 # ---------------------------------------------------------------- 解压
@@ -142,18 +350,21 @@ def flatten_book(d):
     return cur
 
 
-def _try_zip(path, dest, pw):
-    """zipfile 先（ZipCrypto）；AES 交给 pyzipper。返回 True/False。"""
+def _try_zip(path, dest, pw, log=print):
+    """zipfile 先（ZipCrypto）；AES 交给 pyzipper。返回 True/False。
+
+    落盘一律走 _extract_zip_named，不再用 extractall —— 后者会把 GBK/Big5
+    条目名按 cp437 解成乱码。
+    """
+    pwd = pw.encode('utf-8') if pw else None
     try:
         with zipfile.ZipFile(path) as z:
             infos = [i for i in z.infolist() if not i.is_dir()]
             if not infos:
                 return False
-            sample = [i for i in infos[:3]]
-            for i in sample:
-                z.open(i, pwd=pw.encode('utf-8') if pw else None).read(64)
-            z.extractall(dest, pwd=pw.encode('utf-8') if pw else None)
-        return True
+            for i in infos[:3]:                       # 先试读几个，密码不对趁早换
+                z.open(i, pwd=pwd).read(64)
+            return _extract_zip_named(z, dest, pwd, log=log) > 0
     except Exception:
         pass
     try:
@@ -163,10 +374,9 @@ def _try_zip(path, dest, pw):
             if not infos:
                 return False
             for i in infos[:3]:
-                with z.open(i, pwd=pw.encode('utf-8') if pw else None) as fh:
+                with z.open(i, pwd=pwd) as fh:
                     fh.read(64)
-            z.extractall(dest, pwd=pw.encode('utf-8') if pw else None)
-        return True
+            return _extract_zip_named(z, dest, pwd, log=log) > 0
     except Exception:
         return False
 
@@ -192,7 +402,7 @@ def extract_archive(path, dest, pws, log=print):
     tries = [None] + list(pws) if not low.endswith(('.7z', '.rar')) else list(pws) + [None]
     if low.endswith(('.zip', '.uvz', '.zipx')):
         for pw in tries:
-            if _try_zip(path, dest, pw):
+            if _try_zip(path, dest, pw, log=log):
                 return True, pw, 'zip'
         # 兜底：有些"zip"其实是 7z/rar 换名
         for pw in tries:
@@ -236,6 +446,12 @@ def _process_book_one(book, out_dir, exe=PDG2PIC, log=print, force=False, contro
         return {'book': name, 'pages': st['pages'], 'mode': '自建',
                 'out': st['out'], 'ok': True, 'secs': time.time() - t0,
                 'note': '放大 %d 页' % st['upscaled'] if st['upscaled'] else ''}
+    if not exe or not os.path.isfile(exe):
+        # 别再让 subprocess 抛 FileNotFoundError，直接说人话
+        return {'book': name, 'pages': info['total'], 'mode': '失败', 'out': '',
+                'ok': False, 'secs': 0.0, 'orient': '', 'orient_note': '',
+                'note': 'Pdg2Pic.exe 找不到：%s（到界面上重选一次就行）'
+                        % (exe or '（路径是空的）')}
     res = X.convert_book(book, out_dir, exe=exe, a4=True, log=log)
     if res.get('a4'):
         # 用 A4 版替换直出版本名，直出版本删掉
@@ -363,7 +579,10 @@ def run(root, out_dir=None, exe=PDG2PIC, archive=True, force=False, workdir=None
                      'out': dest if ok else '', 'ok': ok, 'secs': time.time() - t0,
                      'note': '%s%s' % (how, '' if pw is None else ' 密码 %s' % pw)})
         if ok:
-            books.extend([b for b in find_books(dest)[0]])
+            nf = fix_mojibake_names(dest, log=log)      # 兜住 7z/rar 出来的乱码名
+            if nf:
+                log('  已把 %d 个乱码名改回中文' % nf)
+            books.extend(find_books(dest)[0])
 
     books = sorted(set(flatten_book(b) for b in books))
     log('待处理书目录：%d 本' % len(books))
@@ -506,15 +725,26 @@ def _selftest():
                          archive=True, log=lambda *a, **k: None)
         chk('批量：全部成功', summ['fail'] == 0 and summ['ok'] == summ['total'], summ)
         chk('批量：自建 %d 本' % summ['self'], summ['self'] >= 3, summ)
-        chk('归档 _已处理', os.path.exists(os.path.join(tmp, 'in', '_已处理', '丙书.zip')))
+        chk('归档 %s' % DIR_DONE,
+            os.path.exists(os.path.join(tmp, 'in', DIR_DONE, '丙书.zip')))
         outs = sorted(os.listdir(os.path.join(tmp, 'out')))
-        pdfs = [o for o in outs if o.endswith('.pdf')]
-        chk('产出 PDF', len(pdfs) >= 3, outs)
+        # 成品按横竖排分柜存放，得往下走一层才找得到
+        pdfs = []
+        for root, _, fs in os.walk(os.path.join(tmp, 'out')):
+            pdfs += [os.path.join(root, f) for f in fs if f.endswith('.pdf')]
+        chk('产出 PDF', len(pdfs) >= 3, [os.path.basename(p) for p in pdfs])
         chk('报告文件', any(o.startswith('转换报告_') for o in outs), outs)
+        # 甲书落在横排/竖排/横竖待识别哪个柜，取决于判出来的方向 —— 从结果取真实路径
+        jia = next((r['out'] for r in recs if r.get('book') == '甲书'), None)
         import fitz
-        d = fitz.open(os.path.join(tmp, 'out', '甲书.pdf'))
+        d = fitz.open(jia)
         chk('甲书 A4/页序', d.page_count == 4 and round(d[0].rect.width) == 595, d.page_count)
         d.close()
+    except Exception as e:                       # 崩了也别把前面已跑出来的结果吞掉
+        import traceback
+        ok = False
+        lines.append('异常：%r' % (e,))
+        lines.append(traceback.format_exc().strip().splitlines()[-1])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

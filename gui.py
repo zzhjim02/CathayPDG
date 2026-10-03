@@ -46,7 +46,7 @@ import pdg_core as C
 import pdg_external as X
 
 APP_TITLE = 'CathayPDG · 超星 PDG 批量转换工具'
-APP_VERSION = 'v0.1.5'
+APP_VERSION = 'v0.1.6'
 COLS = [('src', '来源 / 书名', 300), ('pages', '页数', 60), ('mode', '方式', 70),
         ('ok', '结果', 60), ('secs', '耗时', 70), ('note', '备注', 420)]
 
@@ -114,12 +114,12 @@ def split_drop(data):
 
 
 def find_pdg2pic():
+    """找 Pdg2Pic.exe：先看配套目录，再扫常见位置。"""
     # 新版打包：配套程序都收在 程序组件\ 里
     for cand in (os.path.join(app_dir(), '程序组件', 'Pdg2Pic', 'Pdg2Pic.exe'),
                  os.path.join(app_dir(), '程序组件', 'Pdg2Pic.exe')):
         if os.path.isfile(cand):
             return cand
-    """找 Pdg2Pic.exe：常见目录扫描。"""
     import glob
     cands = [X.DEFAULT_EXE,
              r'C:\Program Files\Pdg2Pic\Pdg2Pic.exe',
@@ -154,7 +154,10 @@ class App:
         self.v_archive = tk.BooleanVar(value=bool(st['archive']))
         self.v_force = tk.BooleanVar(value=bool(st['force']))
         self.v_keep = tk.BooleanVar(value=bool(st['keep_unpacked']))
-        self.pdg2pic = tk.StringVar(value=st.get('pdg2pic') or find_pdg2pic())
+        _exe = st.get('pdg2pic') or ''
+        if _exe and not os.path.isfile(_exe):
+            _exe = ''                     # 存的是旧路径（软件挪过位置）→ 重新探测
+        self.pdg2pic = tk.StringVar(value=_exe or find_pdg2pic())
         self.q = queue.Queue()
         self.control = {'pause': False, 'stop': False}
         self.running = False

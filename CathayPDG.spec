@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('config', 'config'), ('app.ico', '.')]
+datas = [('D:\\我的软件创作库\\CathayPDG 超星PDG批量转换工具\\CathayPDG 超星PDG批量转换工具 0.1.6\\程序组件\\config', 'config'), ('app.ico', '.')]
 binaries = []
 hiddenimports = ['Crypto']
 tmp_ret = collect_all('tkinterdnd2')

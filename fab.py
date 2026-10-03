@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """CathayPDG 一键发版：打包 exe → 校验值 → 发行说明骨架。用法：py -3 fab.py [--skip-build]"""
 import hashlib
+import io
 import os
 import re
 import subprocess
@@ -12,6 +13,7 @@ except Exception:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+UP = os.path.dirname(HERE)                 # 程序组件\ —— config\ 和 Pdg2Pic\ 在这一层
 NAME = 'CathayPDG'
 ENTRY = 'gui.py'
 VERSION_SRC = ['pdg_core.py', 'gui.py']
@@ -33,9 +35,14 @@ def version():
 
 
 def build():
+    # 密码本 config\ 不在 开发\ 下，在上一级 程序组件\ —— 写 'config;config' 会打包失败
+    cfg = os.path.join(UP, 'config')
+    if not os.path.isdir(cfg):
+        print('× 找不到密码本目录：%s' % cfg)
+        return 1
     cmd = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile',
            '--windowed', '--name', NAME, '--icon', 'app.ico',
-           '--add-data', 'config;config', '--add-data', 'app.ico;.',
+           '--add-data', '%s;config' % cfg, '--add-data', 'app.ico;.',
            '--distpath', os.path.join(HERE, 'dist'), '--workpath', os.path.join(HERE, 'build'),
            '--specpath', HERE] + EXTRA + [ENTRY]
     print('打包：', ' '.join(cmd))

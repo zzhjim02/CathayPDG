@@ -12,32 +12,32 @@
 
 ## 🔗 Cathay 人文社科工具链
 
-> 🧭 主线一句话：**CathayIndex 建本地库 → CathayFinder 查书 → CathayPDG 把查到的书（读秀/超星 PDG）转成 PDF → CathayOCR 识别 → CathayShelf 著录归架 → CathayReader 双栏校勘。**
-
 | 步骤 | 工具 | 功能 | 状态 |
 |:---:|---|---|---|
-| ① | [CathayIndex](https://github.com/zzhjim02/CathayIndex) | v1.0.0 | 把本地文件夹建成可检索的「本地文件库」 |
-| ② | [CathayFinder](https://github.com/zzhjim02/CathayFinder) | v1.0.0 | 综合性图书检索引擎：11 个渠道精准查书（找 SSID / 找路径） |
-| ③ | **CathayPDG（你在这里）** | v0.1.5 | 读秀/超星 **PDG 批量转 PDF**：解压解密、横竖排分柜（把查到的书变成 PDF） |
-| ④ | [CathayOCR](https://github.com/zzhjim02/CathayOCR) | v1.2.4 | 扫描件 OCR，产出可搜索文字层 PDF |
-| ⑤ | [CathayShelf](https://github.com/zzhjim02/CathayShelf) | v0.4.5 | 图书著录自动化整理（一 PDF 一夹、命名规范化） |
-| ⑥ | [CathayReader](https://github.com/zzhjim02/CathayReader) | v1.0.0 | 双栏校勘阅读器 |
+| **⓪** | **CathayPDG（你在这里）** | 读秀/超星 **PDG 批量转 PDF**：解压、解密、PDG→PDF、横竖排分柜 | v0.1.6 |
+| ① | [CathayIndex](https://github.com/zzhjim02/CathayIndex) | 把本地文件夹建成可检索的「本地文件库」 | v1.0.0 |
+| ② | [CathayFinder](https://github.com/zzhjim02/CathayFinder) | 综合性图书检索引擎：11 个渠道精准查书（找 SSID / 找路径） | v1.0.0 |
+| ③ | [CathayOCR](https://github.com/zzhjim02/CathayOCR) | 扫描件 OCR，产出可搜索文字层 PDF | v1.2.4 |
+| ④ | [CathayShelf](https://github.com/zzhjim02/CathayShelf) | 图书著录自动化整理（一 PDF 一夹、命名规范化） | v0.4.5 |
+| ⑤ | [CathayReader](https://github.com/zzhjim02/CathayReader) | 双栏校勘阅读器 | v1.0.0 |
+
+> 🧭 主线一句话：**CathayPDG 先把读秀/超星的 PDG 包变成 PDF → 再交给后面几步检索、识别、著录、校勘。**
 
 **备用软件（四个，按需取用）**
 
 | 工具 | 什么时候用 |
 |---|---|
-| [CathayRepair](https://github.com/zzhjim02/CathayRepair) | ④ OCR 前：PDF 目录结构坏了先修一下 |
-| [CathayRestore](https://github.com/zzhjim02/CathayRestore) | ④ 之后：把 OCR 的 TXT 写回成竖排可搜索文字层 |
-| [CathayExtract](https://github.com/zzhjim02/CathayExtract) | ④ 的替代入口：已经有字层的双层 PDF，直接抽 TXT |
-| [CathaySimplify](https://github.com/zzhjim02/CathaySimplify) | 繁简转换 / 编码规范化（功能已并入 ⑤ CathayShelf） |
+| [CathayRepair](https://github.com/zzhjim02/CathayRepair) | ③ OCR 前：PDF 目录结构坏了先修一下 |
+| [CathayRestore](https://github.com/zzhjim02/CathayRestore) | ③ 之后：把 OCR 的 TXT 写回成竖排可搜索文字层 |
+| [CathayExtract](https://github.com/zzhjim02/CathayExtract) | ③ 的替代入口：已经是有字层的双层 PDF，直接抽 TXT |
+| [CathaySimplify](https://github.com/zzhjim02/CathaySimplify) | 繁简转换 / 编码规范化（功能已并入 ④ CathayShelf） |
 
 ## 📦 下载
 
 | 方式 | 说明 |
 |---|---|
 | ✅ **GitHub Releases** | [CathayPDG v0.1.5](https://github.com/zzhjim02/CathayPDG/releases/tag/v0.1.5)（Assets 里直接下 exe） |
-| 📥 百度网盘（密码 2026） | https://pan.baidu.com/s/1s59XzQ7UjXnD246YDX0ckQ?pwd=2026 |
+| 📥 百度网盘（密码 2026） | <待填：百度网盘分享链接> |
 
 包内包含：**主程序 exe** + `程序组件\`（Pdg2Pic 引擎、密码本、便携运行库、源码）。换电脑整个文件夹拷过去即可。
 
@@ -46,7 +46,7 @@
 读秀 / 超星的电子书常以 `.uvz` / `.zip` / `.rar` 打包，里面是 `.pdg` 页图。本工具把这一套流水线一次干完：
 
 1. **找**：扫输入目录，认出压缩包和已解开的书目录（含嵌套 `书A\书A\001.pdg`）
-2. **解**：`zip/uvz` 用 zipfile→pyzipper（支持 AES），`7z/rar` 调 7-Zip；密码本 308 条逐个试（只验前 3 页），单包失败不中断整批
+2. **解**：`zip/uvz` 用 zipfile→pyzipper（支持 AES），`7z/rar` 调 7-Zip；密码本 308 条逐个试（只验前 3 页），单包失败不中断整批。中文压缩包**自动识别文件名编码**（GBK / Big5 / UTF-8 / 日文 / 韩文，见下方 FAQ）
 3. **转**：
    - 页是标准图片（JPG/PNG/BMP/GIF/TIFF/WebP，或带 `HH` 头的 PDG 容器）→ **自己合成 PDF**
    - `00H` 的 CCITT G4 黑白扫描 → 包成 TIFF 自解
@@ -89,8 +89,26 @@ A：`AAH`/`AxH`/`6xH` 是超星定制强加密，公开资料没有可用密钥�
 **Q：密码失败/文损坏怎么办？**
 A：单本失败不影响整批；失败的源文件和中间产物都在 `处理失败\` 里，报告里有原因。密码本可自己加：`程序组件\config\passwords.txt`。
 
+**Q：中文压缩包解压后名字是乱码（老版本留下的）怎么办？**
+A：v0.1.6 起会**自动识别并修回**。zip 里只标了「是不是 UTF-8」，没标具体编码，大陆包多是 GBK、港澳台多是 Big5，以前一律按 cp437 解就成了乱码。现在按「UTF-8 标志位 → 窄字库锁定 → 严格 UTF-8 → GBK/Big5/日文/韩文打分择优」逐条判定；解压后还会再扫一遍，把已有的乱码名改回来。以前转坏的 PDF，再跑一次就能修。
+
 **Q：换电脑？**
-A：整个文件夹拷过去。Pdg2Pic 路径可在界面上重选（默认会去 `程序组件\` 和常见安装位置找）。
+A：整个文件夹拷过去。Pdg2Pic 路径可在界面上重选（默认会去 `程序组件\` 和常见安装位置找）。**建议把设置里的 Pdg2Pic 路径留空**，这样它每次按 exe 所在目录自动找，挪过目录也不会失效。
+
+## 📝 更新日志
+
+### v0.1.6
+
+- **中文压缩包文件名多编码识别**：UTF-8 标志位 → 窄字库（gb2312/big5）锁定 → 严格 UTF-8 → GBK/Big5/cp932/euc_kr 按「常用字率」打分择优；修了 `orig_filename` 二次编码和 CP936 间隔号差异
+- **乱码名兜底修复**：解压后自动扫描，把 cp437 乱码的目录/文件改名回中文（只动含特征字符且能解出汉字的名字）
+- **Pdg2Pic 路径自愈**：设置里的 exe 不存在时自动重新探测；真找不到报可读提示，不再是 `FileNotFoundError`
+- **解压安全**：逐项落盘替代 `extractall`，加目录穿越（`../`）防护
+- **修好自检**：`pdg_batch --selftest` 按真实输出路径定位 PDF（原来硬找 `out\甲书.pdf`，但成品已按横竖排分柜）、归档目录改用常量、异常不再吞掉已跑出的结果
+- **打包脚本**：`fab.py` / `CathayPDG.spec` / `打包EXE.bat` 的密码本路径修正为 `程序组件\config`，补 `fab.py` 缺失的 `import io`
+
+### v0.1.5
+
+- 首个发布版：解压解密、PDG→PDF、横竖排分柜、转换报告
 
 ## 📄 许可
 
