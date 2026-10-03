@@ -17,7 +17,9 @@ UP = os.path.dirname(HERE)                 # 程序组件\ —— config\ 和 Pd
 NAME = 'CathayPDG'
 ENTRY = 'gui.py'
 VERSION_SRC = ['pdg_core.py', 'gui.py']
-EXTRA = ['--collect-all', 'tkinterdnd2', '--collect-all', 'pyzipper', '--hidden-import', 'Crypto']
+# pdg_deps 在 main() 里动态 import（启动前的依赖体检），静态扫描不到，必须显式声明
+EXTRA = ['--collect-all', 'tkinterdnd2', '--collect-all', 'pyzipper',
+         '--hidden-import', 'Crypto', '--hidden-import', 'pdg_deps']
 RELDIR = os.path.join(HERE, 'dist', 'Release')
 
 
@@ -93,6 +95,47 @@ def main():
             '## 校验\n\n- %s：%d 字节（%.2f MB）\n- SHA256：%s\n' %
             (NAME, v, NAME, NAME + '.exe', size, size / 1e6, h))
     print('✓ %s ｜ %s（%.2f MB）｜ SHA256 %s' % (NAME, v, size / 1e6, h[:16] + '...'))
+    # 顺手出便携包：Release 上除了裸 exe，还得给一个解压即用的配齐版本
+    # （失败不致命，别因为压个 zip 把整个发版判死刑）
+    try:
+        portable(v)
+    except Exception as e:
+        print('! 便携包没生成出来：%s' % e)
+    return 0
+
+
+def portable(v=None):
+    """打包「零依赖便携包」：exe + 两个引擎 + 密码本，解压即用。
+
+    单独一个 exe 是能跑，但 7-Zip 和 Pdg2Pic 是外面的文件夹 —— 只拎走 exe
+    的话 .7z/.rar 和强加密页就废了。所以 Release 里除了裸 exe，再给一个配齐的 zip。
+    不含便携 runtime（148MB）和源码，那两样留给想改代码的人。
+    """
+    import zipfile
+    v = v or version()
+    src_exe = os.path.join(RELDIR, NAME + '.exe')
+    if not os.path.isfile(src_exe):
+        print('× 先跑一次打包，没找到 %s' % src_exe)
+        return 1
+    OUT = os.path.join(RELDIR, '%s-%s-portable.zip' % (NAME, v))
+    files = [(src_exe, '%s %s.exe' % (NAME, v))]           # 放进包里就叫带版本号的名字
+    for sub in (os.path.join('Pdg2Pic', 'Pdg2Pic.exe'), os.path.join('Pdg2Pic', 'Pdg2Pic.ini'),
+                os.path.join('7-Zip', '7z.exe'), os.path.join('7-Zip', '7z.dll'),
+                os.path.join('7-Zip', 'LICENSE-7-Zip.txt'),
+                os.path.join('config', 'passwords.txt')):
+        p = os.path.join(UP, sub)
+        if os.path.isfile(p):
+            files.append((p, os.path.join('程序组件', sub)))
+        else:
+            print('  ! 缺 %s（便携包里会没有它）' % sub)
+    with zipfile.ZipFile(OUT, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        for src, arc in files:
+            z.write(src, arc)
+    size = os.path.getsize(OUT)
+    open(os.path.join(RELDIR, '校验值便携包.txt'), 'w', encoding='utf-8').write(
+        '%s\n大小: %d 字节 (%.2f MB)\nSHA256: %s\n' %
+        (os.path.basename(OUT), size, size / 1e6, sha256(OUT)))
+    print('✓ 便携包 %s（%.2f MB，%d 个文件）' % (os.path.basename(OUT), size / 1e6, len(files)))
     return 0
 
 

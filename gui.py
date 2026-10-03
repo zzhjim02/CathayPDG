@@ -219,6 +219,7 @@ class App:
         self.b_stop = ttk.Button(bar, text='停止', command=self.stop, state='disabled')
         self.b_stop.pack(side='left', padx=4)
         ttk.Button(bar, text='打开输出目录', command=self.open_out).pack(side='left', padx=10)
+        ttk.Button(bar, text='环境体检', command=self.show_deps).pack(side='left')
         self.pb = ttk.Progressbar(bar, mode='determinate', length=260)
         self.pb.pack(side='right', padx=6)
         self.lb_stat = ttk.Label(self.root, text='就绪 ｜ 密码本 %d 条 ｜ %s'
@@ -249,6 +250,47 @@ class App:
         self.txt.configure(yscrollcommand=sb2.set)
 
     # ---------------------------------------------------------------- 事件
+    def show_deps(self):
+        """弹一张依赖体检表：缺什么、干什么用的、怎么补。"""
+        import pdg_deps
+        buf = io.StringIO()
+        try:
+            ok = pdg_deps.report(file=buf)
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, '体检没跑起来：%s' % e)
+            return
+        txt = buf.getvalue()
+        self.log(txt)
+        win = tk.Toplevel(self.root)
+        win.title('%s ｜ 环境体检' % (APP_TITLE + ' ' + APP_VERSION))
+        win.geometry('760x420')
+        try:
+            win.iconbitmap(icon_path())
+        except Exception:
+            pass
+        t = tk.Text(win, wrap='none', font=('Consolas', 10))
+        t.pack(fill='both', expand=True, padx=8, pady=(8, 0))
+        sb = ttk.Scrollbar(t)
+        sb.pack(side='right', fill='y')
+        t.configure(yscrollcommand=sb.set)
+        sb.configure(command=t.yview)
+        t.insert('1.0', txt)
+        t.configure(state='disabled')
+        tag = '√ 齐全，可以直接用。' if ok else '× 有必需项缺失，照上面的办法补一下。'
+        ttk.Label(win, text=tag,
+                  foreground='#060' if ok else '#b00').pack(pady=(2, 4))
+        ttk.Button(win, text='复制全文', command=lambda: self._copy_text(txt)).pack(pady=(0, 8))
+
+    @staticmethod
+    def _copy_text(s):
+        try:
+            root_win = tk._default_root
+            if root_win:
+                root_win.clipboard_clear()
+                root_win.clipboard_append(s)
+        except Exception:
+            pass
+
     def _sync_inputs(self):
         """把 inputs 列表写进输入框（太长就显示『共 N 项』）。"""
         if len(self.inputs) == 1:
@@ -465,6 +507,15 @@ def selftest():
 
     import tempfile
     from PIL import Image
+
+    import pdg_deps
+    miss = pdg_deps.missing_required()
+    chk('依赖体检', not miss, '齐全' if not miss else ('缺：' + '、'.join(miss)))
+    s7 = pdg_deps._find_7z()
+    chk('7z 引擎（解 .7z/.rar 用）', bool(s7), s7 or B.sevenz_missing_hint())
+    chk('Pdg2Pic 引擎', bool(pdg_deps._find_pdg2pic()),
+        pdg_deps._find_pdg2pic() or '没找到')
+
     # 自检里所有弹窗改成桩（否则会等人点）
     _mb = (messagebox.askyesno, messagebox.showinfo, messagebox.showwarning, messagebox.showerror)
     messagebox.askyesno = lambda *a, **k: False
@@ -535,8 +586,51 @@ def cli(argv):
 def main():
     if '--selftest' in sys.argv:
         return selftest()
+    if '--check-deps' in sys.argv:
+        import pdg_deps
+        buf = io.StringIO()
+        ok = pdg_deps.report(file=buf)
+        txt = buf.getvalue()
+        # 窗口版 exe 没有控制台，print 出去用户看不见 —— 落到 exe 旁边
+        if getattr(sys, 'frozen', False) or sys.stdout is None:
+            p = os.path.join(app_dir(), '_deps_check.txt')
+            try:
+                open(p, 'w', encoding='utf-8').write(txt)
+                try:
+                    messagebox.showinfo(APP_TITLE + ' ' + APP_VERSION,
+                                        '体检报告已写到：\n%s' % p)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        else:
+            sys.stdout.write(txt)
+        return 0 if ok else 1
     if '--cli' in sys.argv:
         return cli(sys.argv)
+
+    # 源码模式下可能连包都没装，先体检：缺必需项就说清楚，别让用户对着起不来的窗口发呆
+    import pdg_deps
+    try:
+        miss = pdg_deps.missing_required()
+    except Exception:
+        miss = []
+    if miss:
+        msg = ('这几个必需的东西没装上，程序跑不起来：\n\n  %s\n\n%s\n\n'
+               '用打包好的 exe 版不需要装这些（已经封在里面了）。'
+               % ('\n  '.join(miss), pdg_deps.MISSING_INSTALL))
+        try:
+            _r = tk.Tk()
+            _r.withdraw()
+            messagebox.showerror(APP_TITLE + ' ' + APP_VERSION, msg)
+            _r.destroy()
+        except Exception:
+            try:
+                sys.stderr.write(msg + '\n')
+            except Exception:
+                pass
+        return 1
+
     app = App()
     app.root.geometry('1280x820')
     app.root.minsize(980, 620)

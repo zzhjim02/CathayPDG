@@ -48,10 +48,76 @@ import pdg_external as X
 
 APP_TITLE = 'CathayPDG · 超星 PDG 批量转换工具'
 APP_VERSION = 'v0.1.6'
-SEVENZ = r'C:\Program Files\7-Zip\7z.exe'
 PDG2PIC = X.DEFAULT_EXE
 PW_FILE = os.path.join(HERE, 'config', 'passwords.txt')
 ARCHIVE_EXT = ('.zip', '.uvz', '.7z', '.rar', '.zipx')
+
+# 外部解压引擎（只有 .7z/.rar 用得上；zip/uvz 由 Python 自己解）。
+# 不能写死路径 —— 用户机器上未必装了 7-Zip，所以包里自带一份。
+_7Z_CACHE = {'path': None, 'done': False}
+
+
+def _7z_runs(exe):
+    """真跑一次才知道能不能用：7z.exe 离了同目录的 7z.dll 就是个哑文件。"""
+    try:
+        r = subprocess.run([exe, '-version'], stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, timeout=20,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def find_7z(refresh=False):
+    """找可用的 7z 引擎，按可靠度排：随包 → 系统安装 → PATH。找不到返回 None。
+
+    用户机器上什么都不装也能用，靠的是第一档「随包」：程序组件\\7-Zip\\。
+    结果缓存，只探测一次；换了安装包想刷新就传 refresh=True。
+    """
+    if _7Z_CACHE['done'] and not refresh:
+        return _7Z_CACHE['path']
+    ad = app_dir()
+    pf = os.environ.get('ProgramFiles', r'C:\Program Files')
+    pf86 = os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')
+    # 从近到远找「程序组件\7-Zip\」：exe 在包根目录、exe 在子目录、源码开发模式三种摆法都能覆盖
+    up1, up2 = os.path.dirname(ad), os.path.dirname(os.path.dirname(ad))
+    cands = [
+        # ① 随包：跟程序一起发的，一定有配套的 7z.dll
+        os.path.join(ad, '程序组件', '7-Zip', '7z.exe'),
+        os.path.join(ad, '程序组件', '7-Zip', '7za.exe'),
+        os.path.join(up1, '程序组件', '7-Zip', '7z.exe'),
+        os.path.join(up2, '程序组件', '7-Zip', '7z.exe'),
+        os.path.join(ad, '程序组件', '7za.exe'),
+        os.path.join(ad, '7z.exe'),
+        # ② 系统装的 7-Zip
+        os.path.join(pf, '7-Zip', '7z.exe'),
+        os.path.join(pf86, '7-Zip', '7z.exe'),
+    ]
+    hit = None
+    for c in cands:
+        if c and os.path.isfile(c) and os.path.isfile(os.path.join(os.path.dirname(c), '7z.dll')):
+            hit = c
+            break
+    if hit is None:                       # ③ PATH
+        for name in ('7z', '7za'):
+            w = shutil.which(name)
+            if w and _7z_runs(w):
+                hit = w
+                break
+    if hit is None:
+        for c in cands:                   # 裸 exe（dll 不在旁边但也许能用）
+            if c and os.path.isfile(c) and _7z_runs(c):
+                hit = c
+                break
+    _7Z_CACHE['path'], _7Z_CACHE['done'] = hit, True
+    return hit
+
+
+def sevenz_missing_hint():
+    """7z/rar 解不了时给人看的一句话 —— 说清楚缺什么、怎么补。"""
+    return ('没找到可用的解压引擎，.7z / .rar 包解不开。'
+            '把整个文件夹解压出来用（程序组件\\7-Zip\\ 里有自带的一份），'
+            '或者自己装个 7-Zip：https://www.7-zip.org/')
 
 
 def app_dir():
@@ -381,15 +447,20 @@ def _try_zip(path, dest, pw, log=print):
         return False
 
 
-def _try_7z(path, dest, pw=None):
-    if not os.path.exists(SEVENZ):
+def _try_7z(path, dest, pw=None, log=None):
+    sevenz = find_7z()
+    if not sevenz:
         return False
-    cmd = [SEVENZ, 'x', path, '-o' + dest, '-y', '-bso0', '-bsp0']
+    cmd = [sevenz, 'x', path, '-o' + dest, '-y', '-bso0', '-bsp0']
     if pw is not None:
         cmd.append('-p' + pw)
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=1800,
                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        if r.returncode != 0 and log and pw is None:
+            # 只在无密码那次报一次原因，试密码的失败属于正常排除
+            err = (r.stderr or b'').decode('utf-8', 'replace').strip()[:200]
+            log('  7z 解压返回 %d%s' % (r.returncode, '：' + err if err else ''))
         return r.returncode == 0
     except Exception:
         return False
@@ -405,14 +476,21 @@ def extract_archive(path, dest, pws, log=print):
             if _try_zip(path, dest, pw, log=log):
                 return True, pw, 'zip'
         # 兜底：有些"zip"其实是 7z/rar 换名
-        for pw in tries:
-            if _try_7z(path, dest, pw):
-                return True, pw, '7z(兜底)'
-        return False, None, '解压失败（密码本未命中或包损坏）'
+        if find_7z():
+            for pw in tries:
+                if _try_7z(path, dest, pw, log=log):
+                    return True, pw, '7z(兜底)'
+            return False, None, '解压失败（密码本未命中或包损坏）'
+        return False, None, '解压失败（内置 zip 解不开，' + sevenz_missing_hint() + '）'
+    if not find_7z():
+        return False, None, sevenz_missing_hint()
     for pw in tries:
-        if _try_7z(path, dest, pw):
+        if _try_7z(path, dest, pw, log=log):
             return True, pw, '7z'
-    return False, None, '解压失败'
+    ext = os.path.splitext(low)[1]
+    tip = ('.7z / .rar 需要密码，密码本没命中' if ext in ('.7z', '.rar')
+           else '不是支持的格式，或密码本未命中')
+    return False, None, '解压失败（%s）' % tip
 
 
 # ---------------------------------------------------------------- 目录约定
