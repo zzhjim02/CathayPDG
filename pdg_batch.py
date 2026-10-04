@@ -376,10 +376,16 @@ def _has_pdg(d):
 
 
 def find_books(root):
-    """返回 (书目录列表, 压缩包列表)。书目录 = 含 .pdg 的最内层目录。"""
+    """返回 (书目录列表, 压缩包列表)。书目录 = 含 .pdg 的最内层目录。
+
+    跳过归档柜（横排/竖排/横竖待识别/已处理/处理失败），避免重复处理自己造的
+    子目录。但**用户明确指定的根目录永远不跳**——它的名字恰好叫「横排」时
+    也要照常处理（v0.1.9：此前整棵被跳过，表现是「0 项、莫名失败」）。
+    """
     books, arcs = [], []
+    root_abs = os.path.abspath(root)
     for dp, dns, fns in os.walk(root):
-        if os.path.basename(dp) in CABINETS:
+        if os.path.abspath(dp) != root_abs and os.path.basename(dp) in CABINETS:
             dns[:] = []
             continue
         keep = []
@@ -684,6 +690,10 @@ def run(root, out_dir=None, exe=PDG2PIC, archive=True, force=False, workdir=None
                  or any(os.path.abspath(b).startswith(o + os.sep) for o in oabs)]
         log('限定范围：%s' % ', '.join(os.path.basename(p) for p in only))
     log('发现：已解开的书 %d 本，压缩包 %d 个' % (len(books), len(arcs)))
+    if not books and not arcs:
+        log('\n⚠️ 这个目录里没找到任何能处理的东西。\n'
+            '   能处理的只有两种：① 压缩包（%s）；② 里面有 .pdg 文件的文件夹。\n'
+            '   目录：%s' % ('、'.join(ARCHIVE_EXT), root))
 
     for i, a in enumerate(arcs):
         if control is not None and control.get('stop'):
@@ -844,6 +854,18 @@ def _selftest():
         books, arcs = find_books(os.path.join(tmp, 'in'))
         chk('发现书目录/压缩包', len(books) == 2 and len(arcs) == 1, (books, arcs))
         chk('嵌套展开', os.path.basename(flatten_book(os.path.join(tmp, 'in', '乙书'))) == '乙书')
+        # v0.1.9：根目录名叫「横排」这类归档柜名，也必须照常处理，不能整棵跳过
+        hz = os.path.join(tmp, '横排')
+        os.makedirs(hz, exist_ok=True)
+        open(os.path.join(hz, '丁书.zip'), 'wb').write(open(zp, 'rb').read())
+        open(os.path.join(hz, '000001.pdg'), 'wb').write(
+            open(os.path.join(b1, '000001.pdg'), 'rb').read())
+        b2, a2 = find_books(hz)
+        chk('根目录叫「横排」不跳过', len(b2) == 1 and len(a2) == 1, (b2, a2))
+        # 但它的子目录仍要跳过（那才是自己造的归档柜）
+        os.makedirs(os.path.join(hz, DIR_DONE), exist_ok=True)
+        b3, a3 = find_books(hz)
+        chk('「横排」下的归档柜仍跳过', len(b3) == 1 and len(a3) == 1, (b3, a3))
         okx, pw, how = extract_archive(zp, os.path.join(tmp, 'un', '丙书'), pws)
         chk('AES 加密 zip 解压（密码 52gv）', okx and pw == '52gv', '%s %s' % (pw, how))
         recs, summ = run(os.path.join(tmp, 'in'), os.path.join(tmp, 'out'),
