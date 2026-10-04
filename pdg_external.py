@@ -357,13 +357,23 @@ def _dismiss_all(before, hwnd, log=None):
 
 
 def convert_book(book_dir, out_dir, exe=DEFAULT_EXE, a4=True, log=print, timeout=3600,
-                 extra_launch_wait=2.5, keep=False):
+                 extra_launch_wait=2.5, keep=False, tick=None):
     """把一本书交给 Pdg2Pic 转 PDF；返回 dict。不修改任何 ini。
 
     选目录不成功时会关掉 Pdg2Pic 重开再试（最多 3 轮）——它在"刚启动"那几秒最不稳。
+    tick：可选回调（str），把「现在在干嘛」实时报给界面 —— 转一本要几十秒，
+          不报的话界面一直没动静，用户会以为卡死了。
     """
+    def _tick(s):
+        if tick:
+            try:
+                tick(s)
+            except Exception:
+                pass
+
     os.makedirs(out_dir, exist_ok=True)
     base = os.path.basename(os.path.normpath(book_dir))
+    _tick('整理书页…')
     src, npdg = stage_book(book_dir, log=log)
     if npdg == 0:
         raise RuntimeError('这本的书目录里没有 .pdg 文件：%s' % book_dir)
@@ -374,6 +384,9 @@ def convert_book(book_dir, out_dir, exe=DEFAULT_EXE, a4=True, log=print, timeout
     for relaunch in range(1, 4):
         if relaunch > 1:
             log('第 %d 轮：关掉 Pdg2Pic 重开再试' % relaunch)
+            _tick('第 %d 轮：重新启动 Pdg2Pic…' % relaunch)
+        else:
+            _tick('启动 Pdg2Pic…')
         before = set(t for _, _, t in enum_windows())
         prev_fg = u32.GetForegroundWindow()
         proc = subprocess.Popen([exe], cwd=os.path.dirname(exe))
@@ -400,8 +413,10 @@ def convert_book(book_dir, out_dir, exe=DEFAULT_EXE, a4=True, log=print, timeout
         except Exception:
             pass
         _wait_child(hwnd, 1000, timeout=15)            # 等「浏览」按钮可用
+        _tick('等 Pdg2Pic 界面就绪…')
 
         # 1) 设目录：优先「拖进去」（稳、不抢焦点），不行才走它的对话框
+        _tick('向 Pdg2Pic 指定书目录…')
         if not (_drop_folder(hwnd, src, log) or _ensure_folder(hwnd, src, log)):
             last_err = '选不上目录'
             try:
@@ -422,6 +437,7 @@ def convert_book(book_dir, out_dir, exe=DEFAULT_EXE, a4=True, log=print, timeout
         seen_titles = set()
         t0 = time.time()
         last_size, last_t = -1, time.time()
+        last_beat, last_tk = 0.0, 0.0
         while time.time() - t0 < timeout:
             for h, c, t in enum_windows():
                 if c == '#32770' and t not in before and t not in ('Pdg2Pic',) and h != hwnd:
@@ -457,6 +473,16 @@ def convert_book(book_dir, out_dir, exe=DEFAULT_EXE, a4=True, log=print, timeout
                     break
             if dir_error:                              # 它直接报目录无效 → 关掉重来
                 break
+            # 心跳：转一本几十秒很正常，界面和日志得一直有动静，否则用户以为卡死
+            els = time.time() - t0
+            if els - last_beat >= 15:
+                last_beat = els
+                log('  …还在转：已用 %.0f 秒%s'
+                    % (els, ('，状态：%s' % st) if st else ''))
+            if time.time() - last_tk >= 0.8:
+                last_tk = time.time()
+                _tick('Pdg2Pic 正在转 · 已用 %.0f 秒%s'
+                      % (els, ('（%s）' % st.strip()[:24]) if st and st.strip() else ''))
             time.sleep(0.6)
         log('结束判定：%s%s' % (done_by or '未完成', ('｜' + dir_error) if dir_error else ''))
 
@@ -508,6 +534,7 @@ def convert_book(book_dir, out_dir, exe=DEFAULT_EXE, a4=True, log=print, timeout
         if not res['pdf'] and dir_error:
             res['note'] = 'Pdg2Pic 报「%s」' % dir_error
         if res['pdf']:
+            _tick('整理 A4 版面…')
             import fitz
             d = fitz.open(res['pdf'])
             res['pages'] = d.page_count
@@ -524,6 +551,7 @@ def convert_book(book_dir, out_dir, exe=DEFAULT_EXE, a4=True, log=print, timeout
                 res['a4_size'] = st['size']
                 res['a4_sizes'] = sorted(st['sizes'])[:3]
         if made_copy and not keep:
+            _tick('清理临时文件…')
             shutil.rmtree(work, ignore_errors=True)
         if res['pdf']:
             return res

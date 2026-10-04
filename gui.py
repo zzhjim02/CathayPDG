@@ -46,7 +46,8 @@ import pdg_core as C
 import pdg_external as X
 
 APP_TITLE = 'CathayPDG · 超星 PDG 批量转换工具'
-APP_VERSION = 'v0.1.6'
+APP_VERSION = 'v0.1.7'
+SPIN = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'      # 处理中转圈的那一下，告诉用户没卡死
 COLS = [('src', '来源 / 书名', 300), ('pages', '页数', 60), ('mode', '方式', 70),
         ('ok', '结果', 60), ('secs', '耗时', 70), ('note', '备注', 420)]
 
@@ -162,6 +163,9 @@ class App:
         self.control = {'pause': False, 'stop': False}
         self.running = False
         self.recs = []
+        # 处理中实时状态：第几本 / 共几本 / 书名 / 当前这一步在干嘛 / 这本起跑时刻
+        self.busy = {'i': 0, 'n': 0, 'name': '', 'stage': '', 't0': 0.0}
+        self.spin = 0
         self.build()
         if HAS_DND:
             for w in (self.root,):
@@ -190,9 +194,10 @@ class App:
         r = ttk.Frame(top)
         r.pack(fill='x', padx=4, pady=2)
         ttk.Label(r, text='输出目录', width=8).pack(side='left')
-        ttk.Label(r, text='（留空＝直接放回输入目录）', foreground='#666').pack(side='left')
+        ttk.Label(r, text='（留空＝成品直接放回输入目录）', foreground='#666').pack(side='left')
         ttk.Entry(r, textvariable=self.out_dir).pack(side='left', fill='x', expand=True)
         ttk.Button(r, text='选择…', width=8, command=lambda: self.pick('out')).pack(side='left', padx=3)
+        ttk.Button(r, text='清空', width=6, command=self.clear_out).pack(side='left')
         r = ttk.Frame(top)
         r.pack(fill='x', padx=4, pady=2)
         ttk.Label(r, text='密码本', width=8).pack(side='left')
@@ -220,8 +225,11 @@ class App:
         self.b_stop.pack(side='left', padx=4)
         ttk.Button(bar, text='打开输出目录', command=self.open_out).pack(side='left', padx=10)
         ttk.Button(bar, text='环境体检', command=self.show_deps).pack(side='left')
-        self.pb = ttk.Progressbar(bar, mode='determinate', length=260)
+        # 两条进度条：长的是「第几本/共几本」，短的一直在动 —— 表示后台确实在干活
+        self.pb = ttk.Progressbar(bar, mode='determinate', length=240)
         self.pb.pack(side='right', padx=6)
+        self.pb2 = ttk.Progressbar(bar, mode='indeterminate', length=80)
+        self.pb2.pack(side='right', padx=2)
         self.lb_stat = ttk.Label(self.root, text='就绪 ｜ 密码本 %d 条 ｜ %s'
                                  % (len(B.passwords()), '支持拖放' if HAS_DND else '装 tkinterdnd2 可拖放'))
         self.lb_stat.pack(fill='x', padx=8)
@@ -310,11 +318,6 @@ class App:
         self._sync_inputs()
         if hasattr(self, 'sync_pw'):
             self.sync_pw()
-        if not self.out_dir.get() and self.inputs:
-            d0 = self.inputs[0]
-            d0 = d0 if os.path.isdir(d0) else os.path.dirname(d0)
-            if os.path.isdir(d0):
-                self.out_dir.set(d0)
         if len(self.inputs) > n0:
             self.log('加入 %d 项，共 %d 项' % (len(self.inputs) - n0, len(self.inputs)))
 
@@ -333,6 +336,14 @@ class App:
     def clear_inputs(self):
         self.inputs = []
         self._sync_inputs()
+
+    def clear_out(self):
+        """清空输出目录：留空＝成品直接放回输入目录。"""
+        self.out_dir.set('')
+        try:
+            self.lb_stat.configure(text='输出目录已清空：成品会直接放回输入目录')
+        except Exception:
+            pass
 
     def pick(self, kind):
         if kind == 'in':
@@ -387,11 +398,14 @@ class App:
         self.root.destroy()
 
     def open_out(self):
-        p = self.out_dir.get()
+        p = self.out_dir.get().strip()
+        if not p and self.inputs:                 # 留空＝成品就在输入目录里
+            p = self.inputs[0]
+            p = p if os.path.isdir(p) else os.path.dirname(p)
         if p and os.path.isdir(p):
             os.startfile(p)
         else:
-            messagebox.showinfo('提示', '输出目录还不存在')
+            messagebox.showinfo('提示', '输出目录还不存在（留空时成品就放在输入目录里）')
 
     # ---------------------------------------------------------------- 跑
     def start(self):
@@ -406,11 +420,9 @@ class App:
         if outd and os.path.isfile(outd):      # 误填成文件 → 用它的目录
             outd = os.path.dirname(outd)
             self.out_dir.set(outd)
+        # 留空＝各回各家：成品直接放回各自的输入目录。不回填输入框，免得下次还带着旧值
 
-        if not outd:
-            outd = ind                             # 留空＝直接放回输入目录
-            self.out_dir.set(outd)
-        if os.path.abspath(outd).startswith(os.path.abspath(ind)) and \
+        if outd and os.path.abspath(outd).startswith(os.path.abspath(ind)) and \
                 os.path.basename(outd) in ('_已处理',):
             messagebox.showwarning('目录不对', '输出目录不能是 _已处理')
             return
@@ -419,15 +431,17 @@ class App:
             B.PW_FILE = self.pw.get()
         self.control = {'pause': False, 'stop': False}
         self.running = True
-        self.b_run.configure(state='disabled')
+        self.b_run.configure(state='disabled', text='处理中…')
         self.b_pause.configure(state='normal', text='暂停')
         self.b_stop.configure(state='normal')
         for i in self.tree.get_children():
             self.tree.delete(i)
         self.recs = []
         self.pb.configure(value=0, maximum=100)
+        self.pb2.start(12)                      # 短条一直动：后台在干活的视觉信号
+        self.busy = {'i': 0, 'n': 0, 'name': '准备…', 'stage': '正在清点', 't0': time.time()}
         self.log('=' * 60)
-        self.log('开始：%s → %s' % (ind, outd))
+        self.log('开始：%s → %s' % (ind, outd or '各输入目录（原地生成）'))
         threading.Thread(target=self.worker, args=(inds, outd), daemon=True).start()
 
     def worker(self, inds, outd):
@@ -436,6 +450,7 @@ class App:
                                archive=self.v_archive.get(),
                                force=self.v_force.get(), log=self.log,
                                progress=lambda i, n, nm: self.q.put(('cur', (i, n, nm))),
+                               tick=lambda s: self.q.put(('tick', s)),
                                control=self.control)
             self.q.put(('done', (recs, summ, outd)))
         except Exception as e:
@@ -453,7 +468,10 @@ class App:
                 elif kind == 'cur':
                     i, n, nm = payload
                     self.pb.configure(maximum=max(1, n), value=i)
-                    self.lb_cur.configure(text='[%d/%d] %s' % (i, n, nm[:70]))
+                    self.busy.update({'i': i, 'n': n, 'name': str(nm)[:40],
+                                      'stage': '开始', 't0': time.time()})
+                elif kind == 'tick':
+                    self.busy['stage'] = str(payload)[:60]
                 elif kind == 'done':
                     self.finish(*payload)
                 elif kind == 'fail':
@@ -462,10 +480,32 @@ class App:
                     self.reset()
         except queue.Empty:
             pass
+        if self.running:
+            self.beat()
         self.root.after(120, self.pump)
+
+    def beat(self):
+        """处理中每 120ms 刷一次状态行。
+
+        一本要转几十秒，界面一直不动，用户会以为卡死 —— 这里给出
+        「第几本 / 书名 / 正在做什么 / 这本已用多少秒」，并让短进度条一直跑。
+        """
+        b = self.busy
+        self.spin = (self.spin + 1) % len(SPIN)
+        parts = []
+        if b['n']:
+            parts.append('[%d/%d]' % (b['i'], b['n']))
+        if b['name']:
+            parts.append(b['name'])
+        if b['stage']:
+            parts.append(b['stage'])
+        els = time.time() - b['t0'] if b['t0'] else 0.0
+        self.lb_cur.configure(text='%s 正在处理 %s ｜ 这本已用 %.0f 秒'
+                                   % (SPIN[self.spin], ' · '.join(parts) or '…', els))
 
     def finish(self, recs, summ, outd):
         self.recs = recs
+        outd_show = outd or '各输入目录（成品原地生成）'
         for r in recs:
             tag = 'bad' if not r['ok'] else ('skip' if r.get('mode') == '跳过' else '')
             self.tree.insert('', 'end', values=(
@@ -478,20 +518,24 @@ class App:
         self.lb_cur.configure(text='')
         self.reset()
         if summ['fail']:
-            msg = ('完成：成功 %d 本，失败 %d 本\n\n输出目录：%s\n\n'
-                   '有 %d 本没成功，要看详细报告吗？' % (summ['ok'], summ['fail'], outd, summ['fail']))
+            msg = ('完成：成功 %d 本，失败 %d 本\n\n输出位置：%s\n\n'
+                   '有 %d 本没成功，要看详细报告吗？' % (summ['ok'], summ['fail'], outd_show, summ['fail']))
             if messagebox.askyesno('转换完成（有失败）', msg):
                 self.open_out()
         else:
             messagebox.showinfo('转换完成',
-                                '全部成功：共 %d 本。\n\n输出目录：%s'
-                                % (summ['ok'], outd or self.in_dir.get()))
+                                '全部成功：共 %d 本。\n\n输出位置：%s'
+                                % (summ['ok'], outd_show))
 
     def reset(self):
         self.running = False
-        self.b_run.configure(state='normal')
+        self.b_run.configure(state='normal', text='▶ 开始转换')
         self.b_pause.configure(state='disabled', text='暂停')
         self.b_stop.configure(state='disabled')
+        try:
+            self.pb2.stop()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------- 自检

@@ -38,7 +38,7 @@ def _fix_stdout():
 _fix_stdout()
 
 APP_TITLE = 'CathayPDG · 超星 PDG 批量转换工具'
-APP_VERSION = 'v0.1.6'
+APP_VERSION = 'v0.1.7'
 
 A4_W, A4_H = 595.276, 841.89          # A4（pt）
 A4_AR = A4_W / A4_H                   # 0.7071

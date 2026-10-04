@@ -503,10 +503,22 @@ CABINETS = (DIR_H, DIR_V, DIR_UNK, DIR_DONE, DIR_FAIL)
 
 
 # ---------------------------------------------------------------- 单本处理
-def _process_book_one(book, out_dir, exe=PDG2PIC, log=print, force=False, control=None):
-    """处理一本：能自建就自建，否则交外挂。返回记录 dict。"""
+def _process_book_one(book, out_dir, exe=PDG2PIC, log=print, force=False, control=None,
+                      tick=None):
+    """处理一本：能自建就自建，否则交外挂。返回记录 dict。
+
+    tick：可选回调（str），实时报告「这一本现在在干嘛」（转一本要几十秒，不报就像卡死）。
+    """
+    def _tick(s):
+        if tick:
+            try:
+                tick(s)
+            except Exception:
+                pass
+
     book = flatten_book(book)
     name = os.path.basename(os.path.normpath(book))
+    _tick('清点《%s》的书页…' % name)
     try:
         info = C.scan_book(book)
     except Exception as e:
@@ -520,7 +532,14 @@ def _process_book_one(book, out_dir, exe=PDG2PIC, log=print, force=False, contro
     t0 = time.time()
     os.makedirs(out_dir, exist_ok=True)
     if info['can_self']:
-        st = C.assemble_pdf(book, out_pdf, mode='auto', ocr_up=True)
+        _pg = [0]
+
+        def _pp(i, n, nm):
+            # 每页都往界面推一次太密，抽样上报就够看出在动
+            if i - _pg[0] >= 20 or i >= n:
+                _pg[0] = i
+                _tick('合成 PDF：%d/%d 页' % (i, n))
+        st = C.assemble_pdf(book, out_pdf, mode='auto', ocr_up=True, progress=_pp)
         return {'book': name, 'pages': st['pages'], 'mode': '自建',
                 'out': st['out'], 'ok': True, 'secs': time.time() - t0,
                 'note': '放大 %d 页' % st['upscaled'] if st['upscaled'] else ''}
@@ -530,7 +549,7 @@ def _process_book_one(book, out_dir, exe=PDG2PIC, log=print, force=False, contro
                 'ok': False, 'secs': 0.0, 'orient': '', 'orient_note': '',
                 'note': 'Pdg2Pic.exe 找不到：%s（到界面上重选一次就行）'
                         % (exe or '（路径是空的）')}
-    res = X.convert_book(book, out_dir, exe=exe, a4=True, log=log)
+    res = X.convert_book(book, out_dir, exe=exe, a4=True, log=log, tick=_tick)
     if res.get('a4'):
         # 用 A4 版替换直出版本名，直出版本删掉
         try:
@@ -556,12 +575,21 @@ def _process_book_one(book, out_dir, exe=PDG2PIC, log=print, force=False, contro
 
 
 def process_book(book, out_dir, exe=PDG2PIC, log=print, force=False, control=None,
-                 orient_dir=True):
+                 orient_dir=True, tick=None):
     """单本 → 成品 PDF；顺手判横竖排，并放进 横排/竖排/横竖待识别 子目录。"""
-    r = _process_book_one(book, out_dir, exe=exe, log=log, force=force, control=control)
+    def _tick(s):
+        if tick:
+            try:
+                tick(s)
+            except Exception:
+                pass
+
+    r = _process_book_one(book, out_dir, exe=exe, log=log, force=force, control=control,
+                          tick=_tick)
     r.setdefault('orient', '')
     r.setdefault('orient_note', '')
     if r.get('ok') and r.get('out') and os.path.exists(r['out']):
+        _tick('判定《%s》的横竖排…' % r.get('book', ''))
         try:
             lab, conf, det = C.detect_orientation_pdf(r['out'], log=log)
         except Exception as e:
@@ -594,6 +622,13 @@ def run_many(paths, out_dir=None, **kw):
     allrecs, tot = [], {'total': 0, 'ok': 0, 'fail': 0, 'self': 0, 'external': 0, 'skip': 0}
     outp = out_dir or (os.path.abspath(paths[0]) if paths and os.path.isdir(paths[0])
                        else os.path.dirname(os.path.abspath(paths[0])))
+    # 多个输入 → 每个输入各自跑一次 run，进度要累加，不然进度条每轮都跳回 0
+    prog = kw.get('progress')
+    done = [0]
+    if prog:
+        def _prog(i, n, nm):
+            prog(done[0] + i, done[0] + n, nm)
+        kw['progress'] = _prog
     for i, p in enumerate(paths, 1):
         p = os.path.abspath(p)
         root = p if os.path.isdir(p) else os.path.dirname(p)
@@ -601,6 +636,7 @@ def run_many(paths, out_dir=None, **kw):
         recs, summ = run(root, out_dir or root, only=([p] if os.path.isfile(p) else None),
                          report=False, **kw)
         allrecs.extend(recs)
+        done[0] += len([r for r in recs if r.get('mode') != '解压'])
         for k in tot:
             tot[k] += summ.get(k, 0)
     if allrecs:
@@ -609,12 +645,20 @@ def run_many(paths, out_dir=None, **kw):
 
 
 def run(root, out_dir=None, exe=PDG2PIC, archive=True, force=False, workdir=None,
-        log=print, progress=None, control=None, only=None, report=True):
+        log=print, progress=None, control=None, only=None, report=True, tick=None):
     """批量处理整棵目录。返回 (records, summary)。
 
     out_dir 留空（None）＝直接把成品 PDF 放回源文件夹（输入目录）本身。
     解压临时目录默认放到系统临时区，不在源文件夹里堆东西。
+    tick：可选回调（str），报告「现在在干嘛」，让界面一直有动静。
     """
+    def _tick(s):
+        if tick:
+            try:
+                tick(s)
+            except Exception:
+                pass
+
     import tempfile
     out_dir = out_dir or root
     workdir = workdir or os.path.join(tempfile.gettempdir(), 'pdgu_' +
@@ -647,6 +691,7 @@ def run(root, out_dir=None, exe=PDG2PIC, archive=True, force=False, workdir=None
         if control is not None:
             while control.get('pause') and not control.get('stop'):
                 time.sleep(0.3)
+        _tick('解压 %s（%d/%d）…' % (os.path.basename(a), i + 1, len(arcs)))
         dest = os.path.join(workdir, os.path.splitext(os.path.basename(a))[0])
         t0 = time.time()
         ok, pw, how = extract_archive(a, dest, pws, log=log)
@@ -673,7 +718,8 @@ def run(root, out_dir=None, exe=PDG2PIC, archive=True, force=False, workdir=None
         if progress:
             progress(i + 1, len(books), os.path.basename(b))
         try:
-            r = process_book(b, out_dir, exe=exe, log=log, force=force, control=control)
+            r = process_book(b, out_dir, exe=exe, log=log, force=force, control=control,
+                             tick=_tick)
         except Exception as e:
             r = {'book': os.path.basename(b), 'pages': '', 'mode': '失败', 'out': '',
                  'ok': False, 'secs': 0.0, 'note': '%s: %s' % (type(e).__name__, e)}
@@ -683,6 +729,7 @@ def run(root, out_dir=None, exe=PDG2PIC, archive=True, force=False, workdir=None
                'OK' if r['ok'] else 'FAIL ' + str(r.get('note'))[:80]))
 
     if archive:
+        _tick('归档整理…')
         for cab in (DIR_DONE, DIR_FAIL):
             os.makedirs(os.path.join(root, cab), exist_ok=True)
 
