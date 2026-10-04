@@ -9,7 +9,7 @@
 
 ![license](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey)
-![version](https://img.shields.io/badge/version-v0.1.7-orange)
+![version](https://img.shields.io/badge/version-v0.1.8-orange)
 
 </div>
 
@@ -37,7 +37,7 @@
 ## ⚡ 30 秒上手（只看这一节就够用了）
 
 **第 1 步 · 打开**
-双击 `CathayPDG 超星PDG批量转换工具 0.1.7.exe`，一个窗口就出来了。
+双击 `CathayPDG 超星PDG批量转换工具 0.1.8.exe`，一个窗口就出来了。
 
 **第 2 步 · 把东西丢进去**
 两种办法，随便哪个：
@@ -79,7 +79,7 @@
 | 步骤 | 工具 | 一句话 | 版本 |
 |:---:|---|---|---|
 | ⓪ | [CathayRepair](https://github.com/zzhjim02/CathayRepair) | PDF 打不开、一翻就崩 → 先把它抢救回来 | v1.0.0 |
-| **①** | **CathayPDG（你在这里）** | 读秀 / 超星的 PDG 压缩包 → PDF | **v0.1.7** |
+| **①** | **CathayPDG（你在这里）** | 读秀 / 超星的 PDG 压缩包 → PDF | **v0.1.8** |
 | ② | [CathayOCR](https://github.com/zzhjim02/CathayOCR) | 扫描件做 OCR → 能搜索、能复制的 PDF | v1.2.4 |
 | ③ | [CathayRestore](https://github.com/zzhjim02/CathayRestore) | 把 OCR 出来的 TXT 写回 PDF，做成双层 | v1.0.0 |
 | ④ | [CathayExtract](https://github.com/zzhjim02/CathayExtract) | 已经是双层 PDF → 直接把文字抽成 TXT | v1.2.3 |
@@ -106,8 +106,8 @@
 
 | 你要什么 | 下哪个 |
 |---|---|
-| ✅ **推荐 · 完整便携包** | GitHub Releases 里的 **`CathayPDG-v0.1.7-portable.zip`** —— 主程序 + 两个引擎 + 密码本都在里面，**解压就能用** |
-| 已经有了便携包，只要更新主程序 | GitHub Releases 里的 **`CathayPDG-v0.1.7.exe`**（单独 exe，**放进便携包文件夹里用**） |
+| ✅ **推荐 · 完整便携包** | GitHub Releases 里的 **`CathayPDG-v0.1.8-portable.zip`** —— 主程序 + 两个引擎 + 密码本都在里面，**解压就能用** |
+| 已经有了便携包，只要更新主程序 | GitHub Releases 里的 **`CathayPDG-v0.1.8.exe`**（单独 exe，**放进便携包文件夹里用**） |
 | 📥 百度网盘（密码 2026） | <待填：百度网盘分享链接> |
 
 > 👉 去 **[Releases 页面](https://github.com/zzhjim02/CathayPDG/releases)** 下载。
@@ -246,6 +246,17 @@ gui.py --check-deps                    :: 只做依赖体检
 ---
 
 ## 📝 更新日志
+
+### v0.1.8（2026-10-04）
+
+**🆕 转完不再弹窗抢焦点 —— 结果安安静静放在窗口里**
+
+- 以前不管你在写东西还是看网页，「转换完毕」的框会直接跳到最前面，把你的输入位置顶掉。
+  现在改成**后台提醒**：任务栏图标闪一下 + 窗口标题标上「✅ 转换完成（N 本）」，
+  结果写在状态行和日志里，**你切回窗口才看到**
+- 有失败的书也不弹框了：改成**日志里逐本列出失败书名和原因**，状态栏标红
+- 想要原来的弹窗：勾上界面上的「**转完弹窗提醒**」即可（**默认不勾**）
+- 出错时同理：不再弹错误框，只写日志 + 状态栏红字 + 任务栏闪
 
 ### v0.1.7（2026-10-04）
 

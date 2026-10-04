@@ -46,7 +46,7 @@ import pdg_core as C
 import pdg_external as X
 
 APP_TITLE = 'CathayPDG · 超星 PDG 批量转换工具'
-APP_VERSION = 'v0.1.7'
+APP_VERSION = 'v0.1.8'
 SPIN = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'      # 处理中转圈的那一下，告诉用户没卡死
 COLS = [('src', '来源 / 书名', 300), ('pages', '页数', 60), ('mode', '方式', 70),
         ('ok', '结果', 60), ('secs', '耗时', 70), ('note', '备注', 420)]
@@ -75,7 +75,8 @@ def settings_path():
 
 def load_settings():
     d = {'in_dir': '', 'out_dir': '', 'pw': os.path.join(app_dir(), 'config', 'passwords.txt'),
-         'archive': True, 'force': False, 'keep_unpacked': True, 'pdg2pic': ''}
+         'archive': True, 'force': False, 'keep_unpacked': True, 'pdg2pic': '',
+         'popup_done': False}
     try:
         d.update(json.load(open(settings_path(), encoding='utf-8')))
     except Exception:
@@ -114,6 +115,58 @@ def split_drop(data):
     return out
 
 
+# ------------------------------------------------- 任务栏提醒（不抢焦点）
+def _flash(hwnd, flags):
+    """Windows：让任务栏图标闪；flags=0 表示停止。失败就静默跳过。"""
+    if sys.platform != 'win32' or not hwnd:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [('cbSize', wintypes.UINT), ('hwnd', wintypes.HWND),
+                        ('dwFlags', wintypes.DWORD), ('uCount', wintypes.UINT),
+                        ('dwTimeout', wintypes.DWORD)]
+
+        fi = FLASHWINFO()
+        fi.cbSize = ctypes.sizeof(fi)
+        fi.hwnd = wintypes.HWND(hwnd)
+        fi.dwFlags = flags
+        fi.uCount = 0
+        fi.dwTimeout = 0
+        ctypes.windll.user32.FlashWindowEx(ctypes.byref(fi))
+        return True
+    except Exception:
+        return False
+
+
+FLASH_TRAY = 0x00000002          # 只闪任务栏图标
+FLASH_TIMERNOFG = 0x0000000C     # 一直闪到窗口回到前台
+FLASH_STOP = 0x00000000
+
+
+def flash_taskbar(root):
+    """转换完了：任务栏闪 + 标题加标记，**不弹窗、不抢焦点**。"""
+    try:
+        root.update_idletasks()
+        hwnd = int(root.winfo_id(), 0) if str(root.winfo_id()).startswith('0x') \
+            else int(root.winfo_id())
+        if not _flash(hwnd, FLASH_TRAY | FLASH_TIMERNOFG):
+            _flash(hwnd, FLASH_TRAY)
+    except Exception:
+        pass
+
+
+def stop_flash(root):
+    try:
+        hwnd = int(root.winfo_id(), 0) if str(root.winfo_id()).startswith('0x') \
+            else int(root.winfo_id())
+        _flash(hwnd, FLASH_STOP)
+    except Exception:
+        pass
+
+
 def find_pdg2pic():
     """找 Pdg2Pic.exe：先看配套目录，再扫常见位置。"""
     # 新版打包：配套程序都收在 程序组件\ 里
@@ -139,7 +192,8 @@ def find_pdg2pic():
 class App:
     def __init__(self):
         self.root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
-        self.root.title('%s %s' % (APP_TITLE, APP_VERSION))
+        self.base_title = '%s %s' % (APP_TITLE, APP_VERSION)
+        self.root.title(self.base_title)
         try:
             if icon_path():
                 self.root.iconbitmap(icon_path())
@@ -155,6 +209,8 @@ class App:
         self.v_archive = tk.BooleanVar(value=bool(st['archive']))
         self.v_force = tk.BooleanVar(value=bool(st['force']))
         self.v_keep = tk.BooleanVar(value=bool(st['keep_unpacked']))
+        # 默认 False：转完不弹窗，只在窗口里提示 + 任务栏闪，不打断你手头的事
+        self.v_popup = tk.BooleanVar(value=bool(st.get('popup_done', False)))
         _exe = st.get('pdg2pic') or ''
         if _exe and not os.path.isfile(_exe):
             _exe = ''                     # 存的是旧路径（软件挪过位置）→ 重新探测
@@ -175,7 +231,15 @@ class App:
                 except Exception:
                     pass
         self.root.protocol('WM_DELETE_WINDOW', self.on_close)
+        self.root.bind('<FocusIn>', self.on_focus_in)
         self.root.after(120, self.pump)
+
+    def on_focus_in(self, _e=None):
+        """窗口回到前台：撤掉完成标记和任务栏闪烁。"""
+        if getattr(self, '_done_mark', ''):
+            self._done_mark = ''
+            self.root.title(self.base_title)
+            stop_flash(self.root)
 
     # ---------------------------------------------------------------- 界面
     def build(self):
@@ -214,6 +278,8 @@ class App:
         ttk.Checkbutton(r, text='处理完归档：成功的进 已处理\\，失败的进 处理失败\\', variable=self.v_archive).pack(side='left')
         ttk.Checkbutton(r, text='强制重转（忽略已有同名 PDF）', variable=self.v_force).pack(side='left', padx=10)
         ttk.Checkbutton(r, text='保留解压目录', variable=self.v_keep).pack(side='left', padx=10)
+        ttk.Checkbutton(r, text='转完弹窗提醒（默认不弹，只在窗口里提示 + 任务栏闪）',
+                        variable=self.v_popup).pack(side='left', padx=10)
 
         bar = ttk.Frame(self.root)
         bar.pack(fill='x', **pad)
@@ -394,7 +460,7 @@ class App:
                        'inputs': self.inputs, 'out_dir': self.out_dir.get(),
                        'pw': self.pw.get(), 'archive': self.v_archive.get(),
                        'force': self.v_force.get(), 'keep_unpacked': self.v_keep.get(),
-                       'pdg2pic': self.pdg2pic.get()})
+                       'pdg2pic': self.pdg2pic.get(), 'popup_done': self.v_popup.get()})
         self.root.destroy()
 
     def open_out(self):
@@ -438,6 +504,11 @@ class App:
             self.tree.delete(i)
         self.recs = []
         self.pb.configure(value=0, maximum=100)
+        self._done_mark = ''                    # 新一轮开始：撤掉上次的完成标记
+        self.root.title(self.base_title)
+        stop_flash(self.root)
+        self.lb_stat.configure(foreground='')
+        self.lb_cur.configure(text='', foreground='#0b6')
         self.pb2.start(12)                      # 短条一直动：后台在干活的视觉信号
         self.busy = {'i': 0, 'n': 0, 'name': '准备…', 'stage': '正在清点', 't0': time.time()}
         self.log('=' * 60)
@@ -475,8 +546,13 @@ class App:
                 elif kind == 'done':
                     self.finish(*payload)
                 elif kind == 'fail':
-                    self.lb_stat.configure(text='出错：%s' % payload)
-                    messagebox.showerror('出错', str(payload))
+                    # 同样不弹窗：写日志 + 状态栏红字 + 任务栏闪，你自己切回来看
+                    self.log('出错：%s' % payload)
+                    self.lb_stat.configure(text='出错：%s' % payload, foreground='#b00')
+                    self.lb_cur.configure(text='❌ 出错了，详情看上面的日志', foreground='#b00')
+                    self._done_mark = '❌ 出错了'
+                    self.root.title('❌ 出错了 · %s' % self.base_title)
+                    flash_taskbar(self.root)
                     self.reset()
         except queue.Empty:
             pass
@@ -512,20 +588,40 @@ class App:
                 r.get('book', ''), r.get('pages', ''), r.get('mode', ''),
                 '✅' if r['ok'] else '❌', '%.1fs' % r.get('secs', 0),
                 str(r.get('note', ''))[:200]), tags=(tag,) if tag else ())
-        self.lb_stat.configure(text='完成：共 %d ｜ 成功 %d ｜ 失败 %d ｜ 自建 %d ｜ 外挂 %d ｜ 跳过 %d'
-                                    % (summ['total'], summ['ok'], summ['fail'], summ['self'],
-                                       summ['external'], summ['skip']))
-        self.lb_cur.configure(text='')
-        self.reset()
-        if summ['fail']:
-            msg = ('完成：成功 %d 本，失败 %d 本\n\n输出位置：%s\n\n'
-                   '有 %d 本没成功，要看详细报告吗？' % (summ['ok'], summ['fail'], outd_show, summ['fail']))
-            if messagebox.askyesno('转换完成（有失败）', msg):
-                self.open_out()
+        bad = summ['fail']
+        self.lb_stat.configure(
+            text='完成：共 %d ｜ 成功 %d ｜ 失败 %d ｜ 自建 %d ｜ 外挂 %d ｜ 跳过 %d'
+                 % (summ['total'], summ['ok'], bad, summ['self'], summ['external'], summ['skip']),
+            foreground=('#b00' if bad else '#0a0'))
+
+        # 结论写进日志 + 单独一行大字，不弹窗、不抢焦点
+        self.log('=' * 60)
+        if bad:
+            self.log('转换结束：成功 %d 本，失败 %d 本' % (summ['ok'], bad))
+            for r in recs:
+                if not r['ok']:
+                    self.log('  ✗ %s —— %s' % (r.get('book', ''), str(r.get('note', ''))[:120]))
+            self.log('输出位置：%s' % outd_show)
+            self.log('（失败的明细在上面的表格里，红字那几行）')
+            self.lb_cur.configure(text='⚠️ 完成但有 %d 本失败 ｜ 成功 %d 本 ｜ 输出位置：%s'
+                                       % (bad, summ['ok'], outd_show), foreground='#b60')
+            mark = '⚠️ 完成（%d 本失败）' % bad
         else:
-            messagebox.showinfo('转换完成',
-                                '全部成功：共 %d 本。\n\n输出位置：%s'
-                                % (summ['ok'], outd_show))
+            self.log('转换结束：全部成功，共 %d 本' % summ['ok'])
+            self.log('输出位置：%s' % outd_show)
+            self.lb_cur.configure(text='✅ 全部完成：共 %d 本 ｜ 输出位置：%s'
+                                       % (summ['ok'], outd_show), foreground='#0a0')
+            mark = '✅ 转换完成（%d 本）' % summ['ok']
+        self.reset()
+
+        # 后台提醒：任务栏闪 + 标题加标记，等你切回来再看
+        self._done_mark = mark
+        self.root.title('%s · %s' % (mark, self.base_title))
+        flash_taskbar(self.root)
+        if self.v_popup.get():                       # 自己开了「弹窗提醒」才弹
+            self.root.after(200, lambda: messagebox.showinfo(
+                '转换完成', ('成功 %d 本，失败 %d 本。\n\n输出位置：%s'
+                             % (summ['ok'], bad, outd_show))))
 
     def reset(self):
         self.running = False
@@ -562,10 +658,16 @@ def selftest():
 
     # 自检里所有弹窗改成桩（否则会等人点）
     _mb = (messagebox.askyesno, messagebox.showinfo, messagebox.showwarning, messagebox.showerror)
+    pop = {'n': 0}
+
+    def _count(*a, **k):
+        pop['n'] += 1
+        return None
+
     messagebox.askyesno = lambda *a, **k: False
-    messagebox.showinfo = lambda *a, **k: None
-    messagebox.showwarning = lambda *a, **k: None
-    messagebox.showerror = lambda *a, **k: None
+    messagebox.showinfo = _count
+    messagebox.showwarning = _count
+    messagebox.showerror = _count
     tmp = tempfile.mkdtemp(prefix='pdggui_')
     try:
         bk = os.path.join(tmp, 'in', '样书')
@@ -583,6 +685,9 @@ def selftest():
         app.recs = recs
         app.finish(recs, summ, os.path.join(tmp, 'out'))
         chk('表格填充', len(app.tree.get_children()) == len(recs), len(recs))
+        chk('完成不弹窗（只后台提示）', pop['n'] == 0, '弹窗 %d 次' % pop['n'])
+        chk('默认不开弹窗提醒', app.v_popup.get() is False)
+        chk('完成标记落在标题栏', app._done_mark.startswith(('✅', '⚠️')), app._done_mark)
         chk('图标', bool(icon_path()), icon_path() or '缺失')
         chk('Pdg2Pic 路径', bool(app.pdg2pic.get()), app.pdg2pic.get())
         chk('密码本', len(B.passwords()) >= 300, '%d 条' % len(B.passwords()))
