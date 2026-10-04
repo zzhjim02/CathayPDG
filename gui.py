@@ -46,7 +46,7 @@ import pdg_core as C
 import pdg_external as X
 
 APP_TITLE = 'CathayPDG · 超星 PDG 批量转换工具'
-APP_VERSION = 'v0.1.8'
+APP_VERSION = 'v0.1.9'
 SPIN = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'      # 处理中转圈的那一下，告诉用户没卡死
 COLS = [('src', '来源 / 书名', 300), ('pages', '页数', 60), ('mode', '方式', 70),
         ('ok', '结果', 60), ('secs', '耗时', 70), ('note', '备注', 420)]
