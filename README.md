@@ -9,7 +9,7 @@
 
 ![license](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey)
-![version](https://img.shields.io/badge/version-v0.1.8-orange)
+![version](https://img.shields.io/badge/version-v0.1.9-orange)
 
 </div>
 
@@ -37,7 +37,7 @@
 ## ⚡ 30 秒上手（只看这一节就够用了）
 
 **第 1 步 · 打开**
-双击 `CathayPDG 超星PDG批量转换工具 0.1.8.exe`，一个窗口就出来了。
+双击 `CathayPDG 超星PDG批量转换工具 0.1.9.exe`，一个窗口就出来了。
 
 **第 2 步 · 把东西丢进去**
 两种办法，随便哪个：
@@ -79,7 +79,7 @@
 | 步骤 | 工具 | 一句话 | 版本 |
 |:---:|---|---|---|
 | ⓪ | [CathayRepair](https://github.com/zzhjim02/CathayRepair) | PDF 打不开、一翻就崩 → 先把它抢救回来 | v1.0.0 |
-| **①** | **CathayPDG（你在这里）** | 读秀 / 超星的 PDG 压缩包 → PDF | **v0.1.8** |
+| **①** | **CathayPDG（你在这里）** | 读秀 / 超星的 PDG 压缩包 → PDF | **v0.1.9** |
 | ② | [CathayOCR](https://github.com/zzhjim02/CathayOCR) | 扫描件做 OCR → 能搜索、能复制的 PDF | v1.2.4 |
 | ③ | [CathayRestore](https://github.com/zzhjim02/CathayRestore) | 把 OCR 出来的 TXT 写回 PDF，做成双层 | v1.0.0 |
 | ④ | [CathayExtract](https://github.com/zzhjim02/CathayExtract) | 已经是双层 PDF → 直接把文字抽成 TXT | v1.2.3 |
@@ -100,20 +100,14 @@
 | [CathayReader](https://github.com/zzhjim02/CathayReader) | 已由 ⑦ CathayHub Viewer 取代 |
 | [CathaySimplify](https://github.com/zzhjim02/CathaySimplify) | 已并入 ⑤ CathayShelf 的「繁简转换 / 编码规范化」 |
 
-**🛠️ 备用小工具（不占主线，按需取用）**
-
-| 工具 | 什么时候想到它 |
-|---|---|
-| [CathayDir](https://github.com/zzhjim02/CathayDir) | 成批 PDF 摆在那儿，想先知道各自是**横排还是竖排**（分流做 OCR、挑引擎参数、建库前摸底）—— 每 10 页抽一页批量判，结果能存 CSV，也能直接分成「横排 / 竖排 / 未知」三个柜。判定算法借自 CathayPDG |
-
 ---
 
 ## 📦 下载
 
 | 你要什么 | 下哪个 |
 |---|---|
-| ✅ **推荐 · 完整便携包** | GitHub Releases 里的 **`CathayPDG-v0.1.8-portable.zip`** —— 主程序 + 两个引擎 + 密码本都在里面，**解压就能用** |
-| 已经有了便携包，只要更新主程序 | GitHub Releases 里的 **`CathayPDG-v0.1.8.exe`**（单独 exe，**放进便携包文件夹里用**） |
+| ✅ **推荐 · 完整便携包** | GitHub Releases 里的 **`CathayPDG-v0.1.9-portable.zip`** —— 主程序 + 两个引擎 + 密码本都在里面，**解压就能用** |
+| 已经有了便携包，只要更新主程序 | GitHub Releases 里的 **`CathayPDG-v0.1.9.exe`**（单独 exe，**放进便携包文件夹里用**） |
 | 📥 百度网盘（密码 2026） | <待填：百度网盘分享链接> |
 
 > 👉 去 **[Releases 页面](https://github.com/zzhjim02/CathayPDG/releases)** 下载。
@@ -252,6 +246,19 @@ gui.py --check-deps                    :: 只做依赖体检
 ---
 
 ## 📝 更新日志
+
+### v0.1.9（2026-10-04）
+
+**🐛 修好「目录名叫『横排』就什么都扫不到」的坑**
+
+- 程序转完会自己建 `横排 / 竖排 / 横竖待识别 / 已处理 / 处理失败` 这几个归档文件夹。
+  为了不重复处理，扫描时本来会跳过叫这些名字的**子目录**
+- 但如果你**直接把「横排」这个文件夹当输入拖进去**，旧版连它一起跳过了 ——
+  结果就是「共 0 项、什么都没干」，看上去像莫名其妙失败
+- 现在：**你明确指定的输入目录永远处理**，哪怕它正好叫「横排」；
+  它下面的归档子目录照旧跳过（那才是程序自己造的）
+- 另外：如果一个都没扫到，日志会**直接说清原因**（能处理什么、当前目录是哪个），
+  不再沉默地给你一个 0
 
 ### v0.1.8（2026-10-04）
 
