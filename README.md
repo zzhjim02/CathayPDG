@@ -9,7 +9,7 @@
 
 ![license](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey)
-![version](https://img.shields.io/badge/version-v0.2.0-orange)
+![version](https://img.shields.io/github/v/release/zzhjim02/CathayPDG?color=orange)
 
 </div>
 
